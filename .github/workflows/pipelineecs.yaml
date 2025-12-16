@@ -186,20 +186,20 @@ jobs:
             --force-new-deployment \
             --region $AWS_REGION
 
-  notify-on-failure:
-    needs: build-and-deploy
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send WhatsApp notification
-        run: |
-          DEPLOY_ENV="${{ env.ENV }}"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  # notify-on-failure:
+  #   needs: build-and-deploy
+  #   if: failure()
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Send WhatsApp notification
+  #       run: |
+  #         DEPLOY_ENV="${{ env.ENV }}"
+  #         RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          curl -X POST https://api.whatsapp-provider.com/send \
-            -H "Authorization: Bearer ${{ secrets.WHATSAPP_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "to": "'${{ secrets.WHATSAPP_PHONE }}'",
-              "message": "Falha no deploy ECS\nAmbiente: '"$DEPLOY_ENV"'\nPipeline: '"$RUN_URL"'"
-            }'
+  #         curl -X POST https://api.whatsapp-provider.com/send \
+  #           -H "Authorization: Bearer ${{ secrets.WHATSAPP_TOKEN }}" \
+  #           -H "Content-Type: application/json" \
+  #           -d '{
+  #             "to": "'${{ secrets.WHATSAPP_PHONE }}'",
+  #             "message": "Falha no deploy ECS\nAmbiente: '"$DEPLOY_ENV"'\nPipeline: '"$RUN_URL"'"
+  #           }'
