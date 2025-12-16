@@ -7,7 +7,7 @@ module "ecs" {
   services = {
     app = {
       
-      name = "cs-teddy-${var.environment}"
+      name = "ecs-teddy-${var.environment}"
 
       cpu         = 256
       memory      = 512
