@@ -5,8 +5,6 @@ provider "aws" {
 
 terraform {
   backend "remote" {
-    organization = "SUA_ORGANIZACAO_TERRAFORM_CLOUD"
-
     workspaces {
       name = "ecs-teddy"
     }
