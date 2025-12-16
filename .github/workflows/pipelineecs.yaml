@@ -31,7 +31,7 @@ env:
   ENV: ${{ github.event.inputs.env || (github.ref_name == 'prod' && 'prod') || (github.ref_name == 'hml' && 'hml') || (github.ref_name == 'dev' && 'dev') }}
   AWS_REGION: us-east-2
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  SERVICE_NAME: ecs-teddy-${{ github.event.inputs.env || (github.ref_name == 'prod' && 'prod') || (github.ref_name == 'hml' && 'hml') || (github.ref_name == 'dev' && 'dev') }}
+  SERVICE_NAME: ecs-teddy
 
 jobs:
   terraform-validate:
@@ -166,11 +166,11 @@ jobs:
       - name: Login to ECR
         run: |
           aws ecr get-login-password --region $AWS_REGION \
-          | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_NAME}
+          | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
       - name: Build and push image
         run: |
-          IMAGE_REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_NAME}
+          IMAGE_REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_NAME}-${ENV}
           IMAGE_TAG=${ENV}-${GITHUB_SHA::7}
           docker build -t $IMAGE_REPO:$IMAGE_TAG .
           docker push $IMAGE_REPO:$IMAGE_TAG
@@ -178,8 +178,8 @@ jobs:
 
       - name: Update ECS service
         run: |
-          CLUSTER_NAME=${SERVICE_NAME}-${ENV}-cluster
-          SERVICE_NAME_ENV=${SERVICE_NAME}
+          CLUSTER_NAME=${SERVICE_NAME}-${ENV}-cluster      # ecs-teddy-dev-cluster
+          SERVICE_NAME_ENV=${SERVICE_NAME}-${ENV}          # ecs-teddy-dev
 
           aws ecs update-service \
             --cluster $CLUSTER_NAME \
