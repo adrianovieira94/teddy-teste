@@ -1,0 +1,49 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+terraform.tfvars
+.terraform.lock.hcl
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs e sistema
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Arquivos sensíveis
+*.pem
+*.key
+*.crt
+*.pfx
+*.csv
+
+# Outras linguagens
+dist/
+build/
+coverage/
+target/
+bin/
+out/
