@@ -2,7 +2,7 @@ module "ecs" {
   source  = "terraform-aws-modules/ecs/aws"
   version = "6.10.0" 
 
-  cluster_name = "pipeline-ecs-teddy-${var.environment}-cluster"
+  cluster_name = "ecs-teddy-${var.environment}-cluster"
 
   services = {
     app = {
@@ -45,6 +45,6 @@ module "ecs" {
 
   tags = {
     Environment = var.environment
-    Project     = "pipeline-ecs-teddy"
+    Project     = "ecs-teddy"
   }
 }
