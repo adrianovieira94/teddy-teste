@@ -1,3 +1,6 @@
+defaults:
+  run:
+    working-directory: cloud-front
 name: Deploy Static Site S3 + CloudFront
 
 on:

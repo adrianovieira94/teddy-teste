@@ -1,6 +1,3 @@
-defaults:
-  run:
-    working-directory: pipeline-ecs-teddy
 name: Pipe Teddy teste
 
 
