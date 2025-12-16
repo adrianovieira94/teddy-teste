@@ -4,15 +4,6 @@ module "ecs" {
 
   cluster_name = "pipeline-ecs-teddy-${var.environment}-cluster"
 
-  # Se quiser usar capacity provider FARGATE, o módulo faz isso via "cluster_settings"/"default_capacity_provider_strategy"
-  default_capacity_provider_strategy = {
-  default = {
-    capacity_provider = "FARGATE"
-    weight            = 1
-    base              = 1
-  }
-}
-
   services = {
     app = {
       # Nomes devem bater com a pipeline:
