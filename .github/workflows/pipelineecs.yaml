@@ -30,7 +30,7 @@ concurrency:
 env:
   ENV: ${{ github.event.inputs.env || (github.ref_name == 'prod' && 'prod') || (github.ref_name == 'hml' && 'hml') || (github.ref_name == 'dev' && 'dev') }}
   AWS_REGION: us-east-2
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID_pipeline_ecs_teddy }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   SERVICE_NAME: ecs-teddy-${{ github.event.inputs.env || (github.ref_name == 'prod' && 'prod') || (github.ref_name == 'hml' && 'hml') || (github.ref_name == 'dev' && 'dev') }}
 
 jobs:
