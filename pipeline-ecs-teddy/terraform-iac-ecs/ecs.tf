@@ -6,8 +6,8 @@ module "ecs" {
 
   services = {
     app = {
-      # Nomes devem bater com a pipeline:
-      name = "pipeline-ecs-teddy-${var.environment}"
+      
+      name = "cs-teddy-${var.environment}"
 
       cpu         = 256
       memory      = 512
