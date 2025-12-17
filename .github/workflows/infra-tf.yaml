@@ -113,36 +113,34 @@ jobs:
         run: exit 1
 
   notify-on-failure:
-      needs: build-and-deploy
-      if: ${{ always() && needs.build-and-deploy.result == 'failure' }}
-      runs-on: ubuntu-latest
-      steps:
-          - name: Notificar WhatsApp (WATI) em caso de falha
-            env:
-              WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
-              WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}   # deve incluir "Bearer "
-              ENV: ${{ env.ENV }}
-            run: |
-              set -euo pipefail
+    needs: build-and-deploy
+    if: ${{ always() && needs.build-and-deploy.result == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notificar via WhatsApp (Twilio Template)
+        env:
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
+          TWILIO_WHATSAPP_TO: ${{ secrets.TWILIO_WHATSAPP_TO }}
+          TWILIO_TEMPLATE_SID: ${{ secrets.TWILIO_TEMPLATE_SID }}
+          ENV_NAME: ${{ env.ENV }}
+        run: |
+          set -euo pipefail
 
-              PHONE="$(printf '%s' "$WHATSAPP_PHONE" | tr -d '\r\n' | sed 's/^+//')"
-              TOKEN="$(printf '%s' "$WHATSAPP_TOKEN" | tr -d '\r\n')"
-              RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # Aqui você pode customizar as variáveis do template
+          # Ex: "1" = ambiente, "2" = run link
+          CONTENT_VARIABLES=$(jq -nc \
+            --arg v1 "$ENV_NAME" \
+            --arg v2 "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{"1":$v1,"2":$v2}')
 
-              MSG="$(printf 'Falha no deploy ECS\nAmbiente: %s\nRun: %s' "$ENV" "$RUN_URL")"
+          echo "Enviando WhatsApp via Twilio Template..."
+          RESPONSE=$(curl -s -X POST "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json" \
+            --user "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}" \
+            --data-urlencode "To=${TWILIO_WHATSAPP_TO}" \
+            --data-urlencode "From=${TWILIO_WHATSAPP_FROM}" \
+            --data-urlencode "ContentSid=${TWILIO_TEMPLATE_SID}" \
+            --data-urlencode "ContentVariables=${CONTENT_VARIABLES}")
 
-              PAYLOAD="$(jq -n \
-                --arg messageText "$MSG" \
-                --arg channelPhoneNumber "$PHONE" \
-                '{messageText: $messageText, channelPhoneNumber: $channelPhoneNumber}')"
-
-              echo "Sending WhatsApp notification"
-              echo "Payload: $PAYLOAD"
-
-              RESP="$(curl -sS -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${PHONE}" \
-                -H "Authorization: ${TOKEN}" \
-                -H "Content-Type: application/json" \
-                -d "$PAYLOAD")"
-
-              echo "WATI response: $RESP"
-              echo "$RESP" | jq -e '.result == true' >/dev/null
+          echo "Resposta Twilio: $RESPONSE"
