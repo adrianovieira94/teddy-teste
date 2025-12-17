@@ -109,6 +109,9 @@ jobs:
             --force-new-deployment \
             --region "$AWS_REGION"
 
+      - name: Forçar falha para teste de notificação
+        run: exit 1
+
   notify-on-failure:
     needs: build-and-deploy
     if: ${{ failure() }}
