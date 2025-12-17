@@ -32,8 +32,8 @@ module "ecs" {
       }
 
       # Container definitions
-      container_definitions = jsonencode([
-        {
+      container_definitions = {
+        app = {
           name                   = "app"
           image                  = "nginx:latest"
           cpu                    = 256
@@ -48,7 +48,7 @@ module "ecs" {
             }
           ]
         }
-      ])
+      }
     }
   }
 
