@@ -110,8 +110,8 @@ jobs:
       - name: Notificar WhatsApp em caso de falha
         run: |
           PHONE="${{ secrets.WHATSAPP_PHONE }}"
-          MSG="Falha no deploy ECS\nAmbiente: ${{ env.ENV }}\nPipeline: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          curl -X POST "https://live-server.wati.io/api/v1/sendSessionMessage" \
+          MSG="#7Zn4k\nFalha no deploy ECS\nAmbiente: ${{ env.ENV }}\nPipeline: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -X POST "https://app-server.wati.io/api/v1/sendSessionMessage" \
             -H "Authorization: Bearer ${{ secrets.WHATSAPP_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d "{\"phone\":\"$PHONE\",\"messageText\":\"$MSG\"}"
