@@ -112,7 +112,7 @@ jobs:
       - name: Forçar falha para teste de notificação
         run: exit 1
 
-notify-on-failure:
+  notify-on-failure:
     needs: build-and-deploy
     if: ${{ always() && needs.build-and-deploy.result == 'failure' }}
     runs-on: ubuntu-latest
