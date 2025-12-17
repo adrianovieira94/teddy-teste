@@ -112,34 +112,36 @@ jobs:
       - name: Forçar falha para teste de notificação
         run: exit 1
 
-  notify-on-failure:
+notify-on-failure:
     needs: build-and-deploy
     if: ${{ always() && needs.build-and-deploy.result == 'failure' }}
     runs-on: ubuntu-latest
     steps:
-    - name: Notificar WhatsApp (WATI) em caso de falha
-      if: ${{ always() && needs.build-and-deploy.result == 'failure' }}
-      env:
-        WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
-        WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}   # "Bearer eyJ..."
-        ENV: dev
-      run: |
-        set -euo pipefail
+      - name: Notificar WhatsApp (WATI) em caso de falha
+        env:
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+          WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}   # deve incluir "Bearer "
+          ENV: ${{ env.ENV }}
+        run: |
+          set -euo pipefail
 
-        PHONE="$(printf '%s' "$WHATSAPP_PHONE" | tr -d '\r\n' | sed 's/^+//')"
-        TOKEN="$(printf '%s' "$WHATSAPP_TOKEN" | tr -d '\r\n')"
+          PHONE="$(printf '%s' "$WHATSAPP_PHONE" | tr -d '\r\n' | sed 's/^+//')"
+          TOKEN="$(printf '%s' "$WHATSAPP_TOKEN" | tr -d '\r\n')"
 
-        RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-        MSG="Falha no deploy ECS - Ambiente: ${ENV} - Run: ${RUN_URL}"
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          MSG="Falha no deploy ECS - Ambiente: ${ENV} - Run: ${RUN_URL}"
 
-        PAYLOAD="$(jq -n --arg messageText "$MSG" '{messageText:$messageText}')"
+          PAYLOAD="$(jq -n --arg messageText "$MSG" '{messageText:$messageText}')"
 
-        echo "PHONE length: ${#PHONE}"
-        echo "TOKEN length: ${#TOKEN}"
-        echo "MSG length: ${#MSG}"
+          echo "Sending to PHONE=${PHONE} (len ${#PHONE})"
+          echo "MSG len: ${#MSG}"
+          echo "Payload: $PAYLOAD"
 
-        curl -sS -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${PHONE}" \
-          -H "Authorization: ${TOKEN}" \
-          -H "Content-Type: application/json" \
-          -d "$PAYLOAD"
+          RESP="$(curl -sS -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${PHONE}" \
+            -H "Authorization: ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")"
+
+          echo "WATI response: $RESP"
+          echo "$RESP" | jq -e '.result == true' >/dev/null
             
