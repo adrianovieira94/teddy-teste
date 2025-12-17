@@ -112,29 +112,23 @@ jobs:
       - name: Forçar falha para teste de notificação
         run: exit 1
 
-notify-on-failure:
-  needs: build-and-deploy
-  if: ${{ always() && needs.build-and-deploy.result == 'failure' }}
-  runs-on: ubuntu-latest
-  steps:
-    - name: Notificar WhatsApp (WATI) em caso de falha
-      env:
-        WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}   # ex: 14798024855
-        WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}   # "Bearer eyJ..."
-      run: |
-        set -euo pipefail
+  notify-on-failure:
+    needs: build-and-deploy
+    if: ${{ always() && needs.build-and-deploy.result == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notificar WhatsApp (WATI) em caso de falha
+        env:
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}   # ex: 14798024855
+          WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}   # "Bearer eyJ..."
+        run: |
+          set -euo pipefail
 
-        ENV_NAME="${GITHUB_REF_NAME:-unknown}"
+          ENV_NAME="${GITHUB_REF_NAME:-unknown}"
 
-        MSG="Falha no deploy ECS
-Ambiente: ${ENV_NAME}
-Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          MSG="Falha no deploy ECS\nAmbiente: ${ENV_NAME}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-        echo "MSG preview:"
-        printf '%s\n' "$MSG"
-
-          curl -fsS -X POST "https://app-server.wati.io/api/v1/sendSessionMessage" \
-          -H "Authorization: ${WHATSAPP_TOKEN}" \
-          -H "Content-Type: application/json" \
-            -d "$(jq -n --arg phone \"$WHATSAPP_PHONE\" --arg messageText \"$MSG\" '{phone:$phone, messageText:$messageText}')"
-              
+          curl -fsS -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${WHATSAPP_PHONE}" \
+            -H "Authorization: ${WHATSAPP_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg messageText "$MSG" '{messageText:$messageText}')"
