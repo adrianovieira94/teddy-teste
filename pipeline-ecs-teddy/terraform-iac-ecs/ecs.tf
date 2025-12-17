@@ -37,7 +37,9 @@ module "ecs" {
           image     = "nginx:latest" 
           cpu       = 256
           memory    = 512
+
           essential = true
+          readonly_root_filesystem = false
 
           port_mappings = [
             {
