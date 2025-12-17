@@ -1,4 +1,4 @@
-# Dockerfile para pipeline-ecs-teddy
+# Dockerfile para app
 FROM nginx:alpine
 
 EXPOSE 80
