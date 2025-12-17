@@ -114,17 +114,20 @@ jobs:
 
   notify-on-failure:
     needs: build-and-deploy
-    if: ${{ failure() }}
+    if: ${{ always() && needs.build-and-deploy.result == 'failure' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Notificar WhatsApp em caso de falha
+      - name: Notificar WhatsApp (WATI) em caso de falha
+        env:
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+          WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}
+          ENV: ${{ env.ENV }}
         run: |
           set -euo pipefail
 
-          PHONE="${{ secrets.WHATSAPP_PHONE }}"
-          MSG="#7Zn4k\nFalha no deploy ECS\nAmbiente: ${{ env.ENV }}\nPipeline: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MSG="Falha no deploy ECS\nAmbiente: ${ENV}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-          curl -X POST "https://app-server.wati.io/api/v1/sendSessionMessage" \
-            -H "Authorization: Bearer ${{ secrets.WHATSAPP_TOKEN }}" \
+          curl -fsS -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${WHATSAPP_PHONE}" \
+            -H "Authorization: Bearer ${WHATSAPP_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{\"phone\":\"$PHONE\",\"messageText\":\"$MSG\"}"
+            -d "{\"messageText\":\"${MSG//$'\n'/\\n}\"}"
