@@ -148,7 +148,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: pipeline-ecs-teddy
+        working-directory: app
 
     steps:
       - name: Checkout
@@ -161,28 +161,37 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_pipeline_ecs_teddy }}
           aws-region: ${{ env.AWS_REGION }}
 
-
       - name: Login to ECR
         run: |
-          aws ecr get-login-password --region $AWS_REGION \
-          | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+          set -euo pipefail
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+      - name: Choose index.html by environment
+        run: |
+          set -euo pipefail
+          echo "Gerando index.html para ambiente: ${ENV}"
+          cp "index.${ENV}.html" index.html
+          ls -l index*
       - name: Build and push image
         run: |
-          IMAGE_REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_NAME}-${ENV}
-          IMAGE_TAG=${ENV}-${GITHUB_SHA::7}
-          docker build -t $IMAGE_REPO:$IMAGE_TAG .
-          docker push $IMAGE_REPO:$IMAGE_TAG
-          echo "IMAGE_URI=$IMAGE_REPO:$IMAGE_TAG" >> $GITHUB_ENV
-      - name: Update ECS service
+          set -euo pipefail
+          IMAGE_REPO="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_BASE_NAME}-${ENV}"
+          IMAGE_TAG="${ENV}-$(echo "$GITHUB_SHA" | cut -c1-7)"
+          docker build -t "$IMAGE_REPO:$IMAGE_TAG" .
+          docker push "$IMAGE_REPO:$IMAGE_TAG"
+          docker tag "$IMAGE_REPO:$IMAGE_TAG" "$IMAGE_REPO:latest"
+          docker push "$IMAGE_REPO:latest"
+          echo "IMAGE_URI=$IMAGE_REPO:$IMAGE_TAG" >> "$GITHUB_ENV"
+      - name: Update ECS service (force new deployment)
         run: |
-          CLUSTER_NAME=${SERVICE_NAME}-${ENV}-cluster      # ecs-teddy-dev-cluster
-          SERVICE_NAME_ENV=${SERVICE_NAME}-${ENV}          # ecs-teddy-dev
+          set -euo pipefail
+          CLUSTER_NAME="${SERVICE_BASE_NAME}-${ENV}-cluster"
+          SERVICE_NAME="${SERVICE_BASE_NAME}-${ENV}"
           aws ecs update-service \
-            --cluster $CLUSTER_NAME \
-            --service $SERVICE_NAME_ENV \
+            --cluster "$CLUSTER_NAME" \
+            --service "$SERVICE_NAME" \
             --force-new-deployment \
-            --region $AWS_REGION
-
+            --region "$AWS_REGION"
   notify-on-failure:
     needs: build-and-deploy
     if: ${{ always() && needs.build-and-deploy.result == 'failure' }}
