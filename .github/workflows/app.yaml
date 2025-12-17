@@ -9,7 +9,17 @@ on:
   workflow_dispatch:
     inputs:
       env:
-        description: 'Ambiente de teste Teddy'
+        push:
+          branches:
+            - dev
+            - hml
+            - prod
+        pull_request:
+          branches:
+            - dev
+            - hml
+            - prod
+        workflow_dispatch:
         required: true
         type: choice
         default: dev
