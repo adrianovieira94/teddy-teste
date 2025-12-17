@@ -18,6 +18,12 @@ module "ecs" {
       assign_public_ip = true
       subnet_ids = var.subnet_ids
 
+      security_group_ingress_rules = {
+        all = {
+          ip_protocol = "-1"
+          cidr_ipv4   = "0.0.0.0/0"
+        }
+      }
       security_group_egress_rules = {
         all = {
           ip_protocol = "-1"
