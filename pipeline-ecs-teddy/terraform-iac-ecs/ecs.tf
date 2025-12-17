@@ -12,6 +12,7 @@ module "ecs" {
       cpu         = 256
       memory      = 512
       launch_type = "FARGATE"
+      desired_count = 1
 
       # Subnets e SGs
       assign_public_ip = true
