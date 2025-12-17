@@ -14,6 +14,7 @@ module "ecs" {
       launch_type = "FARGATE"
 
       # Subnets e SGs
+      assign_public_ip = true
       subnet_ids = var.subnet_ids
 
       security_group_egress_rules = {
