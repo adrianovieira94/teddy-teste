@@ -127,7 +127,9 @@ jobs:
 
           MSG="Falha no deploy ECS\nAmbiente: ${ENV}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-          curl -fsS -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${WHATSAPP_PHONE}" \
-            -H "Authorization: Bearer ${WHATSAPP_TOKEN}" \
+          curl -i -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${PHONE}" \
+            -H "Authorization: ${TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{\"messageText\":\"${MSG//$'\n'/\\n}\"}"
+            -d '{"messageText":"Teste técnico: alerta da pipeline no WhatsApp via WATI"}'
+
+            
