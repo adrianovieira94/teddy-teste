@@ -129,14 +129,21 @@ jobs:
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           MSG="Falha no deploy ECS - Ambiente: ${ENV} - Run: ${RUN_URL}"
 
-          echo "MSG length: ${#MSG}"
-          echo "MSG preview: $MSG"
+          call_wati () {
+            local payload="$1"
+            curl -sS -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${WHATSAPP_PHONE}" \
+              -H "Authorization: ${WHATSAPP_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$payload"
+          }
 
-          PAYLOAD="$(jq -n --arg messageText "$MSG" '{messageText:$messageText}')"
-          echo "Payload: $PAYLOAD"
+          echo "Trying payload with messageText..."
+          RESP1="$(call_wati "$(jq -n --arg v "$MSG" '{messageText:$v}')")"
+          echo "Resp1: $RESP1"
+          echo "$RESP1" | jq -e '.result == true' >/dev/null 2>&1 && exit 0
 
-          curl -i -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${WHATSAPP_PHONE}" \
-            -H "Authorization: ${WHATSAPP_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD"
-      
+          echo "Trying payload with message..."
+          RESP2="$(call_wati "$(jq -n --arg v "$MSG" '{message:$v}')")"
+          echo "Resp2: $RESP2"
+          echo "$RESP2" | jq -e '.result == true' >/dev/null
+            
