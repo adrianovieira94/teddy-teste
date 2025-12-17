@@ -125,27 +125,19 @@ jobs:
             run: |
               set -euo pipefail
 
-              # Validação básica
-              : "${WHATSAPP_PHONE:?WHATSAPP_PHONE não definido}"
-              : "${WHATSAPP_TOKEN:?WHATSAPP_TOKEN não definido}"
-              : "${ENV:?ENV não definido}"
-
               PHONE="$(printf '%s' "$WHATSAPP_PHONE" | tr -d '\r\n' | sed 's/^+//')"
               TOKEN="$(printf '%s' "$WHATSAPP_TOKEN" | tr -d '\r\n')"
-
               RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-              MSG="$(printf '❌ Falha no deploy ECS\nAmbiente: %s\nRun: %s\n' \
-                "$ENV" \
-                "$RUN_URL"
-              )"
+              MSG="$(printf 'Falha no deploy ECS\nAmbiente: %s\nRun: %s' "$ENV" "$RUN_URL")"
 
-              PAYLOAD="$(jq -n --arg messageText "$MSG" '{messageText:$messageText}')"
+              PAYLOAD="$(jq -n \
+                --arg messageText "$MSG" \
+                --arg channelPhoneNumber "$PHONE" \
+                '{messageText: $messageText, channelPhoneNumber: $channelPhoneNumber}')"
 
               echo "Sending WhatsApp notification"
-              echo "PHONE=${PHONE} (len ${#PHONE})"
-              echo "MSG len=${#MSG}"
-              echo "Payload=${PAYLOAD}"
+              echo "Payload: $PAYLOAD"
 
               RESP="$(curl -sS -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${PHONE}" \
                 -H "Authorization: ${TOKEN}" \
@@ -153,7 +145,4 @@ jobs:
                 -d "$PAYLOAD")"
 
               echo "WATI response: $RESP"
-
               echo "$RESP" | jq -e '.result == true' >/dev/null
-
-            
