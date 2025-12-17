@@ -119,17 +119,16 @@ jobs:
     steps:
       - name: Notificar WhatsApp (WATI) em caso de falha
         env:
-          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
-          WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}  # ex: 14798024855 (sem +)
+          WHATSAPP_TOKEN: ${{ secrets.WHATSAPP_TOKEN }}  # deve vir como "Bearer eyJ..."
           ENV: ${{ env.ENV }}
         run: |
           set -euo pipefail
 
           MSG="Falha no deploy ECS\nAmbiente: ${ENV}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-          curl -i -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${PHONE}" \
-            -H "Authorization: ${TOKEN}" \
+          curl -fsS -X POST "https://app-server.wati.io/api/v1/sendSessionMessage/${WHATSAPP_PHONE}" \
+            -H "Authorization: ${WHATSAPP_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{"messageText":"Teste técnico: alerta da pipeline no WhatsApp via WATI"}'
-
-            
+            -d "{\"messageText\":\"${MSG//$'\n'/\\n}\"}"
+              
