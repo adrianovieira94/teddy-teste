@@ -1,6 +1,10 @@
 name: Pipe Teddy App Deploy
 
 on:
+  workflow_run:
+    workflows: ["Infra Terraform"]
+    types:
+      - completed
   push:
     branches:
       - dev
