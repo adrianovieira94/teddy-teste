@@ -1,48 +1,54 @@
-name: pipelineecs.yaml
+name: Pipe Teddy Infra + Deploy
 
 on:
   push:
-    branches: [dev, hml, prod]
+    branches:
+      - dev
+      - hml
+      - prod
   pull_request:
-    branches: [dev, hml, prod]
+    branches:
+      - dev
+      - hml
+      - prod
   workflow_dispatch:
-
-permissions:
-  contents: read
-  id-token: write  # necessário para OIDC (role-to-assume) :contentReference[oaicite:1]{index=1}
-
-env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  SERVICE_BASE_NAME: ecs-teddy
-  ENV: ${{ github.ref_name }}
+    inputs:
+      env:
+        description: 'Ambiente de destino'
+        required: true
+        type: choice
+        default: dev
+        options:
+          - dev
+          - hml
+          - prod
 
 concurrency:
-  group: ecs-teddy-${{ github.ref_name }}
-  cancel-in-progress: true
+  group: ecs-deploy-${{ github.event.inputs.env || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  ENV: ${{ github.event.inputs.env || (github.ref_name == 'prod' && 'prod') || (github.ref_name == 'hml' && 'hml') || (github.ref_name == 'dev' && 'dev') }}
+  AWS_REGION: us-east-2
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  SERVICE_NAME: ecs-teddy
 
 jobs:
-  terraform_validate:
+  terraform-validate:
     name: Terraform Validate
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: pipeline-ecs-teddy/terraform-iac-ecs
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # OIDC (recomendado)
-      - name: Configure AWS credentials (OIDC)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          fetch-depth: 0
 
-      # Fallback com Access Keys (se você já usa isso hoje)
-      - name: Configure AWS credentials (Access Keys)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' }}
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_pipeline_ecs_teddy }}
@@ -50,34 +56,35 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3 :contentReference[oaicite:2]{index=2}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
 
-      - name: Terraform Init
-        run: terraform init -input=false
+      - name: Terraform init (S3 backend)
+        run: terraform init -backend-config="region=${AWS_REGION}"
 
-      - name: Terraform Validate
+      - name: Select or create workspace
+        run: |
+          terraform workspace select ${ENV} || terraform workspace new ${ENV}
+      - name: Terraform validate
         run: terraform validate
 
-  terraform_plan:
+  terraform-plan:
     name: Terraform Plan
     runs-on: ubuntu-latest
-    needs: terraform_validate
+    needs: terraform-validate
+
     defaults:
       run:
         working-directory: pipeline-ecs-teddy/terraform-iac-ecs
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Configure AWS credentials (OIDC)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          fetch-depth: 0
 
-      - name: Configure AWS credentials (Access Keys)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' }}
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_pipeline_ecs_teddy }}
@@ -86,41 +93,34 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        run: terraform init -input=false
-
-      - name: Terraform Plan
-        run: terraform plan -out=tfplan
-
-      - name: Upload tfplan artifact
-        uses: actions/upload-artifact@v4
         with:
-          name: tfplan
-          path: pipeline-ecs-teddy/terraform-iac-ecs/tfplan
-          if-no-files-found: error
+          terraform_version: 1.8.5
 
-  terraform_apply:
+      - name: Terraform init (S3 backend)
+        run: terraform init -backend-config="region=${AWS_REGION}"
+
+      - name: Select workspace
+        run: terraform workspace select ${ENV}
+
+      - name: Terraform plan
+        run: terraform plan -var-file="environments/${ENV}.tfvars"
+
+  terraform-apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
-    needs: terraform_plan
-    if: ${{ github.event_name == 'push' }} # não aplica em PR
+    needs: terraform-plan
+
     defaults:
       run:
         working-directory: pipeline-ecs-teddy/terraform-iac-ecs
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Configure AWS credentials (OIDC)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          fetch-depth: 0
 
-      - name: Configure AWS credentials (Access Keys)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' }}
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_pipeline_ecs_teddy }}
@@ -129,72 +129,84 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-
-      - name: Download tfplan artifact
-        uses: actions/download-artifact@v4
         with:
-          name: tfplan
-          path: pipeline-ecs-teddy/terraform-iac-ecs
+          terraform_version: 1.8.5
 
-      - name: Terraform Init
-        run: terraform init -input=false
+      - name: Terraform init (S3 backend)
+        run: terraform init -backend-config="region=${AWS_REGION}"
 
-      - name: Terraform Apply
-        run: terraform apply -auto-approve tfplan
+      - name: Select workspace
+        run: terraform workspace select ${ENV}
 
-  build_and_deploy:
+      - name: Terraform apply
+        run: terraform apply -auto-approve -var-file="environments/${ENV}.tfvars"
+
+  build-and-deploy:
     name: Build and Deploy ECS
     runs-on: ubuntu-latest
-    needs: terraform_apply
-    if: ${{ github.event_name == 'push' }}
+    needs: terraform-apply
+
     defaults:
       run:
-        working-directory: app
+        working-directory: pipeline-ecs-teddy
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Configure AWS credentials (Access Keys)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' }}
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_pipeline_ecs_teddy }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_pipeline_ecs_teddy }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2 :contentReference[oaicite:3]{index=3}
 
-      - name: Build and push image (tag + latest)
+      - name: Login to ECR
         run: |
-          set -euo pipefail
-
-          IMAGE_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${SERVICE_BASE_NAME}-${ENV}"
-          IMAGE_TAG="${ENV}-$(echo "${GITHUB_SHA}" | cut -c1-7)"
-
-          docker build -t "${IMAGE_REPO}:${IMAGE_TAG}" .
-          docker push "${IMAGE_REPO}:${IMAGE_TAG}"
-
-          docker tag "${IMAGE_REPO}:${IMAGE_TAG}" "${IMAGE_REPO}:latest"
-          docker push "${IMAGE_REPO}:latest"
-
-          echo "IMAGE_URI=${IMAGE_REPO}:${IMAGE_TAG}" >> "$GITHUB_ENV"
-
-      - name: Update ECS service (force new deployment)
+          aws ecr get-login-password --region $AWS_REGION \
+          | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+      - name: Build and push image
         run: |
-          set -euo pipefail
-
-          CLUSTER_NAME="${SERVICE_BASE_NAME}-${ENV}-cluster"
-          SERVICE_NAME="${SERVICE_BASE_NAME}-${ENV}"
-
+          IMAGE_REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_NAME}-${ENV}
+          IMAGE_TAG=${ENV}-${GITHUB_SHA::7}
+          docker build -t $IMAGE_REPO:$IMAGE_TAG .
+          docker push $IMAGE_REPO:$IMAGE_TAG
+          echo "IMAGE_URI=$IMAGE_REPO:$IMAGE_TAG" >> $GITHUB_ENV
+      - name: Update ECS service
+        run: |
+          CLUSTER_NAME=${SERVICE_NAME}-${ENV}-cluster      # ecs-teddy-dev-cluster
+          SERVICE_NAME_ENV=${SERVICE_NAME}-${ENV}          # ecs-teddy-dev
           aws ecs update-service \
-            --cluster "${CLUSTER_NAME}" \
-            --service "${SERVICE_NAME}" \
-            --force-new-deployment
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME_ENV \
+            --force-new-deployment \
+            --region $AWS_REGION
+
+  notify-on-failure:
+    needs: build-and-deploy
+    if: ${{ always() && needs.build-and-deploy.result == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notificar via WhatsApp (Twilio Template)
+        env:
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
+          TWILIO_WHATSAPP_TO: ${{ secrets.TWILIO_WHATSAPP_TO }}
+          TWILIO_TEMPLATE_SID: ${{ secrets.TWILIO_TEMPLATE_SID}}
+          ENV_NAME: ${{ env.ENV }}
+        run: |
+          set -euo pipefail
+          # Campo 1 = ambiente, Campo 2 = run URL
+          CONTENT_VARIABLES=$(jq -nc \
+            --arg v1 "$ENV_NAME" \
+            --arg v2 "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{"1":$v1,"2":$v2}')
+          RESPONSE=$(curl -s -X POST "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json" \
+            --user "${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}" \
+            --data-urlencode "To=${TWILIO_WHATSAPP_TO}" \
+            --data-urlencode "From=${TWILIO_WHATSAPP_FROM}" \
+            --data-urlencode "ContentSid=${TWILIO_TEMPLATE_SID}" \
+            --data-urlencode "ContentVariables=${CONTENT_VARIABLES}")
+          echo "Resposta Twilio: $RESPONSE"
