@@ -31,6 +31,7 @@ env:
   ENV: ${{ github.event.inputs.env || (github.ref_name == 'prod' && 'prod') || (github.ref_name == 'hml' && 'hml') || (github.ref_name == 'dev' && 'dev') }}
   AWS_REGION: us-east-2
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  SERVICE_NAME: ecs-teddy
 
 jobs:
   terraform-validate:
@@ -58,7 +59,6 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5
-          terraform_wrapper: false
 
       - name: Terraform init (S3 backend)
         run: terraform init -backend-config="region=${AWS_REGION}"
@@ -96,7 +96,6 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5
-          terraform_wrapper: false
 
       - name: Terraform init (S3 backend)
         run: terraform init -backend-config="region=${AWS_REGION}"
@@ -111,10 +110,6 @@ jobs:
     name: Terraform Apply
     runs-on: ubuntu-latest
     needs: terraform-plan
-    outputs:
-      ecs_cluster_name: ${{ steps.get_tf_outputs.outputs.ecs_cluster_name }}
-      ecs_service_name: ${{ steps.get_tf_outputs.outputs.ecs_service_name }}
-      ecr_repository_url: ${{ steps.get_tf_outputs.outputs.ecr_repository_url }}
 
     defaults:
       run:
@@ -137,7 +132,6 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5
-          terraform_wrapper: false
 
       - name: Terraform init (S3 backend)
         run: terraform init -backend-config="region=${AWS_REGION}"
@@ -147,13 +141,6 @@ jobs:
 
       - name: Terraform apply
         run: terraform apply -auto-approve -var-file="environments/${ENV}.tfvars"
-
-      - name: Get Terraform Outputs
-        id: get_tf_outputs
-        run: |
-          echo "ecs_cluster_name=$(terraform output -raw ecs_cluster_name)" >> "$GITHUB_OUTPUT"
-          echo "ecs_service_name=$(terraform output -raw ecs_service_name)" >> "$GITHUB_OUTPUT"
-          echo "ecr_repository_url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
 
   build-and-deploy:
     name: Build and Deploy ECS
@@ -175,6 +162,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_pipeline_ecs_teddy }}
           aws-region: ${{ env.AWS_REGION }}
 
+
       - name: Login to ECR
         run: |
           aws ecr get-login-password --region $AWS_REGION \
@@ -182,37 +170,39 @@ jobs:
 
       - name: Build and push image
         run: |
-          IMAGE_REPO=${{ needs.terraform-apply.outputs.ecr_repository_url }}
-          IMAGE_TAG=${{ env.ENV }}-$(echo ${{ github.sha }} | cut -c1-7)
+          IMAGE_REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_NAME}-${ENV}
+          IMAGE_TAG=${ENV}-${GITHUB_SHA::7}
           docker build -t $IMAGE_REPO:$IMAGE_TAG .
           docker push $IMAGE_REPO:$IMAGE_TAG
-          echo "IMAGE_URI=$IMAGE_REPO:$IMAGE_TAG" >> "$GITHUB_ENV"
+          echo "IMAGE_URI=$IMAGE_REPO:$IMAGE_TAG" >> $GITHUB_ENV
 
       - name: Update ECS service
         run: |
-          CLUSTER_NAME=${{ needs.terraform-apply.outputs.ecs_cluster_name }}
-          SERVICE_NAME_ENV=${{ needs.terraform-apply.outputs.ecs_service_name }}
+          CLUSTER_NAME=${SERVICE_NAME}-${ENV}-cluster      # ecs-teddy-dev-cluster
+          SERVICE_NAME_ENV=${SERVICE_NAME}-${ENV}          # ecs-teddy-dev
 
           aws ecs update-service \
             --cluster $CLUSTER_NAME \
             --service $SERVICE_NAME_ENV \
             --force-new-deployment \
-            --region ${{ env.AWS_REGION }}
+            --region $AWS_REGION
 
-  notify-on-failure:
-    needs: build-and-deploy
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send WhatsApp notification
-        run: |
-          DEPLOY_ENV="${{ env.ENV }}"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  # notify-on-failure:
+  #   needs: build-and-deploy
+  #   if: failure()
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Send WhatsApp notification
+  #       run: |
+  #         DEPLOY_ENV="${{ env.ENV }}"
+  #         RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          curl -X POST https://api.whatsapp-provider.com/send \
-            -H "Authorization: Bearer ${{ secrets.WHATSAPP_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "to": "'${{ secrets.WHATSAPP_PHONE }}'",
-              "message": "Falha no deploy ECS\nAmbiente: '"$DEPLOY_ENV"'\nPipeline: '"$RUN_URL"'"
-            }'
+  #         curl -X POST https://api.whatsapp-provider.com/send \
+  #           -H "Authorization: Bearer ${{ secrets.WHATSAPP_TOKEN }}" \
+  #           -H "Content-Type: application/json" \
+  #           -d '{
+  #             "to": "'${{ secrets.WHATSAPP_PHONE }}'",
+  #             "message": "Falha no deploy ECS\nAmbiente: '"$DEPLOY_ENV"'\nPipeline: '"$RUN_URL"'"
+  #           }'
+
+ 
