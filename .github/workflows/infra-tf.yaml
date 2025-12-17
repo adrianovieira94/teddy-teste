@@ -1,6 +1,10 @@
-name: Infra Terraform
+name: Pipe Teddy App Deploy
 
 on:
+  workflow_run:
+    workflows: ["Infra Terraform"]
+    types:
+      - completed
   push:
     branches:
       - dev
@@ -17,30 +21,34 @@ on:
         description: 'Ambiente de destino'
         required: true
         type: choice
-        default: hml
+        default: dev
         options:
           - dev
           - hml
           - prod
 
-jobs:
-  terraform-apply:
-    name: Terraform Apply
-    runs-on: ubuntu-latest
+concurrency:
+  group: ecs-app-deploy-${{ github.event.inputs.env || github.ref_name }}
+  cancel-in-progress: false
 
-    env:
-      ENV: ${{ github.event.inputs.env || (github.ref_name == 'prod' && 'prod') || (github.ref_name == 'hml' && 'hml') || (github.ref_name == 'dev' && 'dev') }}
-      AWS_REGION: us-east-2
+env:
+  ENV: ${{ github.event.inputs.env || (github.ref_name == 'prod' && 'prod') || (github.ref_name == 'hml' && 'hml') || (github.ref_name == 'dev' && 'dev') }}
+  AWS_REGION: us-east-2
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  SERVICE_BASE_NAME: ecs-teddy   # prefixo comum
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy ECS
+    runs-on: ubuntu-latest
 
     defaults:
       run:
-        working-directory: pipeline-ecs-teddy/terraform-iac-ecs
+        working-directory: app
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -49,24 +57,48 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_pipeline_ecs_teddy }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.8.5
-          terraform_wrapper: false
-
-      - name: Terraform init (S3 backend)
-        run: terraform init -backend-config="region=${AWS_REGION}"
-
-      - name: Select or create workspace
+      - name: Login to ECR
         run: |
-          terraform workspace select ${ENV} || terraform workspace new ${ENV}
+          aws ecr get-login-password --region $AWS_REGION \
+          | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-      - name: Terraform validate
-        run: terraform validate
+      - name: Choose index.html by environment
+        run: |
+          echo "Gerando index.html para ambiente: ${ENV}"
+          cp index.${ENV}.html index.html
+          ls -l index*
 
-      - name: Terraform plan
-        run: terraform plan -var-file="environments/${ENV}.tfvars"
+      - name: Build and push image
+        run: |
+          IMAGE_REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_BASE_NAME}-${ENV}
+          IMAGE_TAG=${ENV}-$(echo $GITHUB_SHA | cut -c1-7)
+          docker build -t $IMAGE_REPO:$IMAGE_TAG .
+          docker push $IMAGE_REPO:$IMAGE_TAG
+          # Tag e envia como latest também
+          docker tag $IMAGE_REPO:$IMAGE_TAG $IMAGE_REPO:latest
+          docker push $IMAGE_REPO:latest
+          echo "IMAGE_URI=$IMAGE_REPO:$IMAGE_TAG" >> "$GITHUB_ENV"
 
-      - name: Terraform apply
-        run: terraform apply -auto-approve -var-file="environments/${ENV}.tfvars"
+      - name: Update ECS service
+        run: |
+          CLUSTER_NAME=${SERVICE_BASE_NAME}-${ENV}-cluster
+          SERVICE_NAME=${SERVICE_BASE_NAME}-${ENV}
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --force-new-deployment \
+            --region $AWS_REGION
+
+  notify-on-failure:
+    needs: build-and-deploy
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notificar WhatsApp em caso de falha
+        run: |
+          PHONE="${{ secrets.WHATSAPP_PHONE }}"
+          MSG="Falha no deploy ECS\nAmbiente: ${{ env.ENV }}\nPipeline: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -X POST "https://live-server.wati.io/api/v1/sendSessionMessage" \
+            -H "Authorization: Bearer ${{ secrets.WHATSAPP_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"phone\":\"$PHONE\",\"messageText\":\"$MSG\"}"
