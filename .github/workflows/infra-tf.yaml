@@ -125,7 +125,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          whatsappNumber="$(printf '%s' "$WHATSAPP_PHONE" | tr -d '\r\n' | sed 's/^+//')"
+          PHONE="$(printf '%s' "$WHATSAPP_PHONE" | tr -d '\r\n' | sed 's/^+//')"
           TOKEN="$(printf '%s' "$WHATSAPP_TOKEN" | tr -d '\r\n')"
 
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
@@ -137,7 +137,7 @@ jobs:
           echo "MSG len: ${#MSG}"
           echo "Payload: $PAYLOAD"
 
-          RESP="$(curl -sS -X POST "https://app-server.wati.io/api/v1/getMessages/{whatsappNumber}" \
+          RESP="$(curl -sS -X POST "https://app-server.wati.io/api/v1/getMessages/${PHONE}" \
             -H "Authorization: ${TOKEN}" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD")"
