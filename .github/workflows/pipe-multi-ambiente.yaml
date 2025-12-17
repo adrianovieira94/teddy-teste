@@ -76,7 +76,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: pipeline-ecs-teddy/terraform-iac-ecs
+        working-directory: pipeline-multi-ambiente/terraform-iac-ecs
 
     steps:
       - name: Checkout
@@ -148,8 +148,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: app
-
+        working-directory: pipeline-multi-ambiente/app
     steps:
       - name: Checkout
         uses: actions/checkout@v4

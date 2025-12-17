@@ -1,0 +1,71 @@
+# Pipeline para rodar migrações no RDS 
+name: Migration RDS
+
+on:
+  push:
+    paths:
+      - 'migrations/**'
+      - 'app/**'
+      - '.github/workflows/migration-rds.yaml'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-2
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  CLUSTER_NAME: ecs-teddy-${{ github.ref_name }}-cluster
+  SUBNETS: "subnet-0838cebc4f2d72f7f,subnet-0e45ef6c9ff2540dc,subnet-0a6c4f1da283090a4"
+
+
+jobs:
+  migrate-db:
+    name: Run DB Migrations on ECS Fargate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_pipeline_ecs_teddy }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_pipeline_ecs_teddy }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Buscar Security Group do ambiente
+        id: sg
+        run: |
+          SG_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=${CLUSTER_NAME}-sg" \
+            --query "SecurityGroups[0].GroupId" --output text)
+          echo "SECURITY_GROUP=$SG_ID" >> $GITHUB_ENV
+
+      - name: Build migration image
+        run: |
+          docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/migration:${GITHUB_SHA::7} -f migrations/Dockerfile migrations
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/migration:${GITHUB_SHA::7}
+
+      - name: Run migration task on ECS
+        run: |
+          TASK_DEF=$(aws ecs register-task-definition \
+            --family migration-task \
+            --network-mode awsvpc \
+            --requires-compatibilities FARGATE \
+            --cpu "256" --memory "512" \
+            --container-definitions "[{\"name\":\"migration\",\"image\":\"$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/migration:${GITHUB_SHA::7}\",\"essential\":true}]" \
+            --execution-role-arn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole \
+            --task-role-arn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole)
+          TASK_DEF_ARN=$(echo $TASK_DEF | jq -r '.taskDefinition.taskDefinitionArn')
+          aws ecs run-task \
+            --cluster $CLUSTER_NAME \
+            --launch-type FARGATE \
+            --task-definition $TASK_DEF_ARN \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}"
+
+  # O deploy só roda se as migrações forem bem-sucedidas
+  deploy:
+    needs: migrate-db
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy app
+        run: echo "Seu job de deploy aqui"
