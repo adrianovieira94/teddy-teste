@@ -5,20 +5,23 @@ on:
     workflows: ["Infra Terraform"]
     types:
       - completed
+
   push:
     branches:
       - dev
       - hml
       - prod
+
   pull_request:
     branches:
       - dev
       - hml
       - prod
+
   workflow_dispatch:
     inputs:
       env:
-        description: 'Ambiente de destino'
+        description: "Ambiente de destino"
         required: true
         type: choice
         default: dev
@@ -28,19 +31,27 @@ on:
           - prod
 
 concurrency:
-  group: ecs-app-deploy-${{ github.event.inputs.env || github.ref_name }}
+  group: ecs-app-deploy-${{ github.event.inputs.env || github.ref_name || github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 env:
-  ENV: ${{ github.event.inputs.env || (github.ref_name == 'prod' && 'prod') || (github.ref_name == 'hml' && 'hml') || (github.ref_name == 'dev' && 'dev') }}
   AWS_REGION: us-east-2
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  SERVICE_BASE_NAME: ecs-teddy   # prefixo comum
+  SERVICE_BASE_NAME: ecs-teddy
+  # Resolve o ambiente por input (workflow_dispatch) OU branch (push) OU branch do workflow_run
+  ENV: ${{ github.event.inputs.env || github.ref_name || github.event.workflow_run.head_branch }}
 
 jobs:
   build-and-deploy:
     name: Build and Deploy ECS
     runs-on: ubuntu-latest
+
+    # Evita deploy em PR e evita deploy se o workflow "Infra Terraform" falhou
+    if: >
+      ${{
+        github.event_name != 'pull_request' &&
+        (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+      }}
 
     defaults:
       run:
@@ -59,58 +70,57 @@ jobs:
 
       - name: Login to ECR
         run: |
-          aws ecr get-login-password --region $AWS_REGION \
-          | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+          set -euo pipefail
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
       - name: Choose index.html by environment
         run: |
+          set -euo pipefail
           echo "Gerando index.html para ambiente: ${ENV}"
-          cp index.${ENV}.html index.html
+          cp "index.${ENV}.html" index.html
           ls -l index*
 
       - name: Build and push image
         run: |
-          IMAGE_REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_BASE_NAME}-${ENV}
-          IMAGE_TAG=${ENV}-$(echo $GITHUB_SHA | cut -c1-7)
-          docker build -t $IMAGE_REPO:$IMAGE_TAG .
-          docker push $IMAGE_REPO:$IMAGE_TAG
-          # Tag e envia como latest também
-          docker tag $IMAGE_REPO:$IMAGE_TAG $IMAGE_REPO:latest
-          docker push $IMAGE_REPO:latest
+          set -euo pipefail
+
+          IMAGE_REPO="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_BASE_NAME}-${ENV}"
+          IMAGE_TAG="${ENV}-$(echo "$GITHUB_SHA" | cut -c1-7)"
+
+          docker build -t "$IMAGE_REPO:$IMAGE_TAG" .
+          docker push "$IMAGE_REPO:$IMAGE_TAG"
+
+          docker tag "$IMAGE_REPO:$IMAGE_TAG" "$IMAGE_REPO:latest"
+          docker push "$IMAGE_REPO:latest"
+
           echo "IMAGE_URI=$IMAGE_REPO:$IMAGE_TAG" >> "$GITHUB_ENV"
 
-      - name: Update ECS service
+      - name: Update ECS service (force new deployment)
         run: |
-          CLUSTER_NAME=${SERVICE_BASE_NAME}-${ENV}-cluster
-          SERVICE_NAME=${SERVICE_BASE_NAME}-${ENV}
+          set -euo pipefail
+
+          CLUSTER_NAME="${SERVICE_BASE_NAME}-${ENV}-cluster"
+          SERVICE_NAME="${SERVICE_BASE_NAME}-${ENV}"
+
           aws ecs update-service \
-        - name: Terraform init (S3 backend)
-          run: terraform init -backend-config="region=${AWS_REGION}"
-
-        - name: Select or create workspace
-          run: |
-            terraform workspace select ${ENV} || terraform workspace new ${ENV}
-
-        - name: Terraform validate
-          run: terraform validate
-
-        - name: Terraform plan
-          run: terraform plan -var-file="environments/${ENV}.tfvars"
-
-            --cluster $CLUSTER_NAME \
-            --service $SERVICE_NAME \
+            --cluster "$CLUSTER_NAME" \
+            --service "$SERVICE_NAME" \
             --force-new-deployment \
-            --region $AWS_REGION
+            --region "$AWS_REGION"
 
   notify-on-failure:
     needs: build-and-deploy
-    if: failure()
+    if: ${{ failure() }}
     runs-on: ubuntu-latest
     steps:
       - name: Notificar WhatsApp em caso de falha
         run: |
+          set -euo pipefail
+
           PHONE="${{ secrets.WHATSAPP_PHONE }}"
           MSG="#7Zn4k\nFalha no deploy ECS\nAmbiente: ${{ env.ENV }}\nPipeline: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
           curl -X POST "https://app-server.wati.io/api/v1/sendSessionMessage" \
             -H "Authorization: Bearer ${{ secrets.WHATSAPP_TOKEN }}" \
             -H "Content-Type: application/json" \
