@@ -1,0 +1,78 @@
+name: Pipe Teddy App Deploy
+
+on:
+  push:
+    branches:
+      - dev
+      - hml
+      - prod
+  workflow_dispatch:
+    inputs:
+      env:
+        description: 'Ambiente de teste Teddy'
+        required: true
+        type: choice
+        default: dev
+        options:
+          - dev
+          - hml
+          - prod
+
+concurrency:
+  group: ecs-app-deploy-${{ github.event.inputs.env || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  ENV: ${{ github.event.inputs.env || (github.ref_name == 'prod' && 'prod') || (github.ref_name == 'hml' && 'hml') || (github.ref_name == 'dev' && 'dev') }}
+  AWS_REGION: us-east-2
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  SERVICE_BASE_NAME: ecs-teddy   # prefixo comum
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy ECS
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: pipeline-ecs-teddy
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_pipeline_ecs_teddy }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_pipeline_ecs_teddy }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region $AWS_REGION \
+          | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+      - name: Choose index.html by environment
+        run: |
+          echo "Gerando index.html para ambiente: ${ENV}"
+          cp index.${ENV}.html index.html
+          ls -l index*
+
+      - name: Build and push image
+        run: |
+          IMAGE_REPO=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/${SERVICE_BASE_NAME}-${ENV}
+          IMAGE_TAG=${ENV}-$(echo $GITHUB_SHA | cut -c1-7)
+          docker build -t $IMAGE_REPO:$IMAGE_TAG .
+          docker push $IMAGE_REPO:$IMAGE_TAG
+          echo "IMAGE_URI=$IMAGE_REPO:$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Update ECS service
+        run: |
+          CLUSTER_NAME=${SERVICE_BASE_NAME}-${ENV}-cluster   
+          SERVICE_NAME=${SERVICE_BASE_NAME}-${ENV}          
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --force-new-deployment \
+            --region $AWS_REGION
