@@ -84,6 +84,19 @@ jobs:
           CLUSTER_NAME=${SERVICE_BASE_NAME}-${ENV}-cluster
           SERVICE_NAME=${SERVICE_BASE_NAME}-${ENV}
           aws ecs update-service \
+        - name: Terraform init (S3 backend)
+          run: terraform init -backend-config="region=${AWS_REGION}"
+
+        - name: Select or create workspace
+          run: |
+            terraform workspace select ${ENV} || terraform workspace new ${ENV}
+
+        - name: Terraform validate
+          run: terraform validate
+
+        - name: Terraform plan
+          run: terraform plan -var-file="environments/${ENV}.tfvars"
+
             --cluster $CLUSTER_NAME \
             --service $SERVICE_NAME \
             --force-new-deployment \
