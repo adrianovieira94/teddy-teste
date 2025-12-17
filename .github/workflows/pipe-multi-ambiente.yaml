@@ -40,7 +40,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: pipeline-ecs-teddy/terraform-iac-ecs
+        working-directory: pipeline-multi-ambiente/terraform-iac-ecs
 
     steps:
       - name: Checkout
