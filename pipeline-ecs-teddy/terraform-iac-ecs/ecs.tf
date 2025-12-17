@@ -32,16 +32,15 @@ module "ecs" {
       }
 
       # Container definitions
-      container_definitions = {
-        app = {
-          image     = "nginx:latest" 
-          cpu       = 256
-          memory    = 512
-
-          essential = true
-          readonly_root_filesystem = false
-
-          port_mappings = [
+      container_definitions = jsonencode([
+        {
+          name                   = "app"
+          image                  = "nginx:latest"
+          cpu                    = 256
+          memory                 = 512
+          essential              = true
+          readonlyRootFilesystem = false
+          portMappings = [
             {
               containerPort = 80
               hostPort      = 80
@@ -49,7 +48,7 @@ module "ecs" {
             }
           ]
         }
-      }
+      ])
     }
   }
 
