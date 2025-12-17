@@ -6,20 +6,15 @@ on:
       - dev
       - hml
       - prod
+  pull_request:
+    branches:
+      - dev
+      - hml
+      - prod
   workflow_dispatch:
     inputs:
       env:
-        push:
-          branches:
-            - dev
-            - hml
-            - prod
-        pull_request:
-          branches:
-            - dev
-            - hml
-            - prod
-        workflow_dispatch:
+        description: 'Ambiente de destino'
         required: true
         type: choice
         default: dev
