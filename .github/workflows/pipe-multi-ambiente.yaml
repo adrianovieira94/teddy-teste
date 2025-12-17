@@ -1,0 +1,200 @@
+name: pipelineecs.yaml
+
+on:
+  push:
+    branches: [dev, hml, prod]
+  pull_request:
+    branches: [dev, hml, prod]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # necessário para OIDC (role-to-assume) :contentReference[oaicite:1]{index=1}
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  SERVICE_BASE_NAME: ecs-teddy
+  ENV: ${{ github.ref_name }}
+
+concurrency:
+  group: ecs-teddy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  terraform_validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipeline-ecs-teddy/terraform-iac-ecs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # OIDC (recomendado)
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Fallback com Access Keys (se você já usa isso hoje)
+      - name: Configure AWS credentials (Access Keys)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_pipeline_ecs_teddy }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_pipeline_ecs_teddy }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3 :contentReference[oaicite:2]{index=2}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+  terraform_plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: terraform_validate
+    defaults:
+      run:
+        working-directory: pipeline-ecs-teddy/terraform-iac-ecs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (Access Keys)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_pipeline_ecs_teddy }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_pipeline_ecs_teddy }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+      - name: Upload tfplan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: pipeline-ecs-teddy/terraform-iac-ecs/tfplan
+          if-no-files-found: error
+
+  terraform_apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: terraform_plan
+    if: ${{ github.event_name == 'push' }} # não aplica em PR
+    defaults:
+      run:
+        working-directory: pipeline-ecs-teddy/terraform-iac-ecs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (Access Keys)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_pipeline_ecs_teddy }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_pipeline_ecs_teddy }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Download tfplan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: pipeline-ecs-teddy/terraform-iac-ecs
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+
+  build_and_deploy:
+    name: Build and Deploy ECS
+    runs-on: ubuntu-latest
+    needs: terraform_apply
+    if: ${{ github.event_name == 'push' }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (Access Keys)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_pipeline_ecs_teddy }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_pipeline_ecs_teddy }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2 :contentReference[oaicite:3]{index=3}
+
+      - name: Build and push image (tag + latest)
+        run: |
+          set -euo pipefail
+
+          IMAGE_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${SERVICE_BASE_NAME}-${ENV}"
+          IMAGE_TAG="${ENV}-$(echo "${GITHUB_SHA}" | cut -c1-7)"
+
+          docker build -t "${IMAGE_REPO}:${IMAGE_TAG}" .
+          docker push "${IMAGE_REPO}:${IMAGE_TAG}"
+
+          docker tag "${IMAGE_REPO}:${IMAGE_TAG}" "${IMAGE_REPO}:latest"
+          docker push "${IMAGE_REPO}:latest"
+
+          echo "IMAGE_URI=${IMAGE_REPO}:${IMAGE_TAG}" >> "$GITHUB_ENV"
+
+      - name: Update ECS service (force new deployment)
+        run: |
+          set -euo pipefail
+
+          CLUSTER_NAME="${SERVICE_BASE_NAME}-${ENV}-cluster"
+          SERVICE_NAME="${SERVICE_BASE_NAME}-${ENV}"
+
+          aws ecs update-service \
+            --cluster "${CLUSTER_NAME}" \
+            --service "${SERVICE_NAME}" \
+            --force-new-deployment
